@@ -1,0 +1,148 @@
+name: MacSentinel
+options:
+  bundleIdPrefix: com.macsentinel
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+
+# Modern build settings to silence Xcode's "Update to recommended settings" prompt
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    CLANG_ENABLE_MODULES: YES
+    CLANG_ENABLE_OBJC_ARC: YES
+    CLANG_ENABLE_OBJC_WEAK: YES
+    CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING: YES
+    CLANG_WARN_BOOL_CONVERSION: YES
+    CLANG_WARN_COMMA: YES
+    CLANG_WARN_CONSTANT_CONVERSION: YES
+    CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS: YES
+    CLANG_WARN_DIRECT_OBJC_ISA_USAGE: YES_ERROR
+    CLANG_WARN_DOCUMENTATION_COMMENTS: YES
+    CLANG_WARN_EMPTY_BODY: YES
+    CLANG_WARN_ENUM_CONVERSION: YES
+    CLANG_WARN_INFINITE_RECURSION: YES
+    CLANG_WARN_INT_CONVERSION: YES
+    CLANG_WARN_NON_LITERAL_NULL_CONVERSION: YES
+    CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF: YES
+    CLANG_WARN_OBJC_LITERAL_CONVERSION: YES
+    CLANG_WARN_OBJC_ROOT_CLASS: YES_ERROR
+    CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER: YES
+    CLANG_WARN_RANGE_LOOP_ANALYSIS: YES
+    CLANG_WARN_STRICT_PROTOTYPES: YES
+    CLANG_WARN_SUSPICIOUS_MOVE: YES
+    CLANG_WARN_UNGUARDED_AVAILABILITY: YES_AGGRESSIVE
+    CLANG_WARN_UNREACHABLE_CODE: YES
+    CLANG_WARN__DUPLICATE_METHOD_MATCH: YES
+    ENABLE_STRICT_OBJC_MSGSEND: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    GCC_NO_COMMON_BLOCKS: YES
+    GCC_WARN_64_TO_32_BIT_CONVERSION: YES
+    GCC_WARN_ABOUT_RETURN_TYPE: YES_ERROR
+    GCC_WARN_UNDECLARED_SELECTOR: YES
+    GCC_WARN_UNINITIALIZED_AUTOS: YES_AGGRESSIVE
+    GCC_WARN_UNUSED_FUNCTION: YES
+    GCC_WARN_UNUSED_VARIABLE: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    SWIFT_EMIT_LOC_STRINGS: YES
+
+targets:
+  MacSentinel:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: MacSentinel
+        excludes:
+          - "**/*.md"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.macsentinel.app
+        PRODUCT_NAME: MacSentinel
+        INFOPLIST_FILE: MacSentinel/App/Info.plist
+        SWIFT_OBJC_BRIDGING_HEADER: MacSentinel/Bridge/MacSentinel-Bridging-Header.h
+        APP_SANDBOX_ENABLED: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: MacSentinel/App/MacSentinel.entitlements
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - target: MacSentinelHelper
+        embed: false
+      - target: MacSentinelMCP
+        embed: true
+        codeSign: true
+        copy:
+          destination: executables  # embedded inside .app/Contents/MacOS/
+    scheme:
+      testTargets:
+        - MacSentinelTests
+
+  MacSentinelHelper:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: MacSentinelHelper
+      - path: MacSentinel/Shared/HelperProtocol.swift   # shared XPC protocol
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.macsentinel.helper
+        PRODUCT_NAME: MacSentinelHelper
+        INFOPLIST_FILE: MacSentinelHelper/Info.plist
+        APP_SANDBOX_ENABLED: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: MacSentinelHelper/MacSentinelHelper.entitlements
+
+  # ── MacSentinelMCP ─────────────────────────────────────────────────────
+  # Standalone CLI binary that exposes MacSentinel's scanners + safe-delete
+  # capabilities as an MCP (Model Context Protocol) server via JSON-RPC over
+  # stdio. Local AI assistants (Claude Code, Cursor, Cowork, etc.) can spawn
+  # this binary and call its tools to scan/clean the system on the user's
+  # behalf — no API key required, no data leaves the machine.
+  #
+  # Shares Models/Utilities/Services/Bridge source files with the main app so
+  # there's a single source of truth for scanning and deletion logic.
+  MacSentinelMCP:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: MacSentinelMCP
+      - path: MacSentinel/Models                # shared data structs + SafetyLevel
+      - path: MacSentinel/Utilities             # ProtectedPaths, AuditLog, ByteFormatter
+      - path: MacSentinel/Services/FileSystem   # CacheScanner, AppResidualScanner, SafeDelete
+      - path: MacSentinel/Services/Migration    # MigrationScanner
+      - path: MacSentinel/Services/Process      # Process listing + trust
+      - path: MacSentinel/Services/Security     # Browser / Network / XProtect
+        excludes:
+          - PermissionService.swift             # main-app only (NSWorkspace launch)
+          - PrivilegedHelperConnection.swift    # main-app only (SMAppService)
+      - path: MacSentinel/Services/SystemData   # System snapshot (read-only)
+      - path: MacSentinel/Services/AI           # AIScanReporter (JSON formatting reused)
+      - path: MacSentinel/Bridge                # SMC + IOKit + Thermal bridges
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.macsentinel.mcp
+        PRODUCT_NAME: macsentinel-mcp
+        SWIFT_OBJC_BRIDGING_HEADER: MacSentinel/Bridge/MacSentinel-Bridging-Header.h
+        APP_SANDBOX_ENABLED: NO
+        ENABLE_HARDENED_RUNTIME: YES
+
+  MacSentinelTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: MacSentinelTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.macsentinel.tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: MacSentinel

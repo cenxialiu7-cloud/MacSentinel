@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.macsentinel.helper</string>
+
+    <!-- BundleProgram is resolved by SMAppService relative to the calling
+         app bundle's Contents/MacOS directory. Must match the helper
+         executable's name. -->
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/MacSentinelHelper</string>
+
+    <!-- Expose the Mach service so NSXPCConnection can find us. -->
+    <key>MachServices</key>
+    <dict>
+        <key>com.macsentinel.helper</key>
+        <true/>
+    </dict>
+
+    <!-- Restrict connections to processes signed with the main app's identifier. -->
+    <key>SMAuthorizedClients</key>
+    <array>
+        <string>identifier "com.macsentinel.app"</string>
+    </array>
+
+    <!-- Run on-demand only; the launchd will start the helper when the
+         main app opens an XPC connection to it. -->
+    <key>RunAtLoad</key>
+    <false/>
+    <key>KeepAlive</key>
+    <false/>
+
+    <!-- Recommended hardening: run with reduced FS protections off. -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>

@@ -1,0 +1,54 @@
+# ─── Build artefacts ──────────────────────────────────────────────────
+build/
+dist/
+DerivedData/
+*.xcarchive
+*.dSYM.zip
+*.dSYM/
+*.ipa
+*.app
+*.pkg
+
+# ─── Xcode generated project (we use xcodegen — project.yml is source of truth) ──
+MacSentinel.xcodeproj/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+xcuserdata/
+*.xcuserstate
+
+# ─── Secrets — must never be committed ────────────────────────────────
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+.env
+.env.*
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+fastlane/.env*
+
+# ─── macOS / editor cruft ─────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+*.swp
+*~
+.idea/
+.vscode/
+
+# ─── Logs ─────────────────────────────────────────────────────────────
+*.log
+notary-*.log
+
+# ─── Swift Package Manager ────────────────────────────────────────────
+.build/
+.swiftpm/
+Packages/
+Package.resolved
