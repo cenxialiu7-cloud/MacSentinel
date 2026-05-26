@@ -14,7 +14,11 @@ struct MacSentinelApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("MacSentinel") {
+        // id="main" is required so that other parts of the app (e.g. the
+        // status-bar popover's "開啟主介面" button) can call openWindow(id:"main")
+        // to bring the main window forward. Without an explicit id, openWindow
+        // silently fails on LSUIElement apps that have no Dock icon.
+        WindowGroup("MacSentinel", id: "main") {
             ContentView()
                 .frame(minWidth: 900, minHeight: 600)
                 .environment(collector)
