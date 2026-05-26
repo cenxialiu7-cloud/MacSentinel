@@ -327,7 +327,20 @@ struct CacheItem: Identifiable {
     var path: String
     var sizeBytes: UInt64
     var isSelected: Bool = true
+    /// Filesystem modification date; populated by CacheScanner. Optional
+    /// because some paths (especially containers) may not return attributes.
+    var modificationDate: Date? = nil
 
     var displaySize: String { ByteFormatter.format(sizeBytes) }
     var safetyLevel: SafetyLevel { SafetyClassifier.classify(path: path) }
+
+    /// Per-item recommendation (safety level, suggested action, 中文 reasonText).
+    /// Computed lazily from path + modDate + size via RecommendationEvaluator.
+    var recommendation: ItemRecommendation {
+        RecommendationEvaluator.evaluate(
+            path: path,
+            modificationDate: modificationDate,
+            sizeBytes: sizeBytes
+        )
+    }
 }

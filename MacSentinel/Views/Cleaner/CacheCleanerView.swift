@@ -277,8 +277,11 @@ struct CacheCategoryRow: View {
 struct CacheItemRow: View {
     let item: CacheItem
     let onToggle: () -> Void
+    @State private var showingReason = false
 
     var body: some View {
+        let rec = item.recommendation
+
         HStack {
             Button { onToggle() } label: {
                 Image(systemName: item.isSelected ? "checkmark.square.fill" : "square")
@@ -293,6 +296,17 @@ struct CacheItemRow: View {
                 HStack(spacing: 4) {
                     Text(item.name).font(.subheadline)
                     SafetyBadge(level: item.safetyLevel, compact: true)
+                    // ── Recommendation chip (建議刪除 / 評估 / 保留) ──
+                    Button { showingReason = true } label: {
+                        Image(systemName: rec.action.systemImage)
+                            .font(.caption2)
+                            .foregroundStyle(actionColor(rec.action))
+                    }
+                    .buttonStyle(.plain)
+                    .help(rec.reasonText)
+                    .popover(isPresented: $showingReason, arrowEdge: .top) {
+                        ReasonPopover(action: rec.action, text: rec.reasonText)
+                    }
                 }
                 Text(item.path)
                     .font(.caption)
@@ -306,6 +320,48 @@ struct CacheItemRow: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
-        .help(item.safetyLevel.rationale)
+        .help(rec.reasonText)
+    }
+
+    private func actionColor(_ action: RecommendedAction) -> Color {
+        switch action {
+        case .delete:  return .blue
+        case .caution: return .orange
+        case .keep:    return .green
+        }
+    }
+}
+
+// MARK: - Reason popover
+
+struct ReasonPopover: View {
+    let action: RecommendedAction
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: action.systemImage)
+                    .foregroundStyle(color)
+                Text(action.label)
+                    .font(.headline)
+                    .foregroundStyle(color)
+            }
+            Divider()
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(width: 320)
+    }
+
+    private var color: Color {
+        switch action {
+        case .delete:  return .blue
+        case .caution: return .orange
+        case .keep:    return .green
+        }
     }
 }

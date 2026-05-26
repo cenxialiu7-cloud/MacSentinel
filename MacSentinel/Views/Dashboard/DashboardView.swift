@@ -4,6 +4,7 @@ import Charts
 struct DashboardView: View {
     @Environment(SystemDataCollector.self) var collector: SystemDataCollector
     @State private var permissions = PermissionService.shared
+    @State private var activeDrillDown: DashboardDrillDown?
 
     var body: some View {
         ScrollView {
@@ -32,7 +33,8 @@ struct DashboardView: View {
                             icon: "cpu",
                             color: alertColor(snap.cpu.alertLevel),
                             history: collector.history.map { $0.cpu.usagePercent },
-                            maxValue: 100
+                            maxValue: 100,
+                            onTap: { activeDrillDown = .cpu }
                         )
                         MetricCardView(
                             title: "記憶體",
@@ -41,7 +43,8 @@ struct DashboardView: View {
                             icon: "memorychip",
                             color: alertColor(snap.memory.alertLevel),
                             history: collector.history.map { $0.memory.usagePercent },
-                            maxValue: 100
+                            maxValue: 100,
+                            onTap: { activeDrillDown = .memory }
                         )
                         MetricCardView(
                             title: "磁碟",
@@ -59,7 +62,8 @@ struct DashboardView: View {
                             icon: "network",
                             color: .blue,
                             history: collector.history.map { $0.network.downloadBytesPerSec },
-                            maxValue: nil
+                            maxValue: nil,
+                            onTap: { activeDrillDown = .network }
                         )
                     } else {
                         ProgressView("載入中…").frame(maxWidth: .infinity)
@@ -71,6 +75,8 @@ struct DashboardView: View {
                     HStack(spacing: 16) {
                         if snap.battery.isAvailable {
                             BatteryCardView(battery: snap.battery)
+                                .contentShape(Rectangle())
+                                .onTapGesture { activeDrillDown = .battery }
                         }
                         ThermalCardView(thermal: snap.thermal)
                     }
@@ -81,6 +87,11 @@ struct DashboardView: View {
         .navigationTitle("系統概覽")
         .task {
             permissions.refresh()
+        }
+        // ── Drill-down sheets ────────────────────────────────────────────
+        .sheet(item: $activeDrillDown) { item in
+            DrillDownContainer(item: item)
+                .frame(minWidth: 720, minHeight: 540)
         }
     }
 
@@ -140,6 +151,11 @@ struct MetricCardView: View {
     let color: Color
     let history: [Double]
     let maxValue: Double?
+    /// Optional tap callback. When set, the card becomes clickable and shows
+    /// a chevron hint in the header to indicate drill-down availability.
+    var onTap: (() -> Void)? = nil
+
+    @State private var hovering = false
 
     var body: some View {
         GroupBox {
@@ -147,6 +163,11 @@ struct MetricCardView: View {
                 HStack {
                     Image(systemName: icon).foregroundStyle(color)
                     Text(title).font(.headline)
+                    if onTap != nil {
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
                     Spacer()
                     Text(value).font(.title2.bold()).foregroundStyle(color).monospacedDigit()
                 }
@@ -178,6 +199,17 @@ struct MetricCardView: View {
                 }
             }
         }
+        // Tap & hover behaviour (only active when onTap is provided)
+        .contentShape(Rectangle())
+        .scaleEffect(hovering && onTap != nil ? 1.01 : 1.0)
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .onHover { isHovering in
+            hovering = isHovering
+            if onTap != nil {
+                isHovering ? NSCursor.pointingHand.push() : NSCursor.pop()
+            }
+        }
+        .onTapGesture { onTap?() }
     }
 }
 

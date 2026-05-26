@@ -229,7 +229,12 @@ final class CacheScanner {
             let size = await SafeDeleteService.shared.sizeOfItems([url])
             // ── Noise threshold: < 1 KB is just metadata placeholder ──
             guard size >= 1024 else { continue }
-            items.append(CacheItem(name: name, path: path, sizeBytes: size))
+            // Capture mtime cheaply (single `stat` call) so RecommendationEvaluator
+            // can apply its "未存取 N 天" rules.
+            let modDate = (try? fm.attributesOfItem(atPath: path)[.modificationDate]) as? Date
+            items.append(CacheItem(
+                name: name, path: path, sizeBytes: size, modificationDate: modDate
+            ))
         }
         items.sort { $0.sizeBytes > $1.sizeBytes }
         return CacheCategory(type: type, items: items)
