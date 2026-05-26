@@ -6,6 +6,13 @@ options:
   xcodeVersion: "15.0"
   generateEmptyDirectories: true
 
+# ─── Swift Packages ────────────────────────────────────────────────────
+# Sparkle: in-app auto-update framework, signs/verifies updates with Ed25519.
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
+
 # Modern build settings to silence Xcode's "Update to recommended settings" prompt
 settings:
   base:
@@ -79,6 +86,7 @@ targets:
         codeSign: true
         copy:
           destination: executables  # embedded inside .app/Contents/MacOS/
+      - package: Sparkle
     scheme:
       testTargets:
         - MacSentinelTests

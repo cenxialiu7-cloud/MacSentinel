@@ -32,6 +32,11 @@ step() { printf "\n\033[1;34m▸ %s\033[0m\n" "$*"; }
 ok()   { printf "\033[1;32m✓ %s\033[0m\n" "$*"; }
 die()  { printf "\033[1;31m✗ %s\033[0m\n" "$*" >&2; exit 1; }
 
+SPARKLE_BIN="${PROJECT_ROOT}/Scripts/sparkle-bin"
+SPARKLE_VERSION="2.7.2"
+APPCAST="${PROJECT_ROOT}/appcast.xml"
+DMG_DOWNLOAD_URL="https://github.com/cenxialiu7-cloud/MacSentinel/releases/download/v${VERSION}/${APP_NAME}-${VERSION}.dmg"
+
 # ─── 0. Pre-flight checks ─────────────────────────────────────────────────
 step "Pre-flight checks"
 security find-identity -v -p codesigning | grep -q "${SIGN_IDENTITY}" \
@@ -40,6 +45,23 @@ xcrun notarytool history --keychain-profile "${NOTARY_PROFILE}" >/dev/null 2>&1 
   || die "Notary profile '${NOTARY_PROFILE}' not set up. Run: xcrun notarytool store-credentials ${NOTARY_PROFILE} ..."
 command -v xcodegen >/dev/null || die "xcodegen not installed (brew install xcodegen)"
 ok "Signing identity & notary profile present"
+
+# Bootstrap Sparkle CLI tools (sign_update, generate_keys, generate_appcast)
+if [[ ! -x "${SPARKLE_BIN}/sign_update" ]]; then
+    step "Downloading Sparkle ${SPARKLE_VERSION} CLI tools"
+    mkdir -p "${SPARKLE_BIN}"
+    TMP_TAR=$(mktemp -t sparkle).tar.xz
+    curl -sL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" -o "${TMP_TAR}"
+    tar -xJf "${TMP_TAR}" -C "$(dirname "${TMP_TAR}")"
+    cp "$(dirname "${TMP_TAR}")/bin/sign_update" \
+       "$(dirname "${TMP_TAR}")/bin/generate_keys" \
+       "$(dirname "${TMP_TAR}")/bin/generate_appcast" \
+       "${SPARKLE_BIN}/"
+    rm -f "${TMP_TAR}"
+    ok "Sparkle CLI tools ready"
+fi
+"${SPARKLE_BIN}/sign_update" -p >/dev/null 2>&1 \
+  || die "Sparkle Ed25519 private key not found in keychain. Run: ${SPARKLE_BIN}/generate_keys"
 
 # ─── 1. Regenerate Xcode project ──────────────────────────────────────────
 step "Regenerating Xcode project (xcodegen)"
@@ -212,6 +234,56 @@ Download \`$(basename "${DMG_FINAL}")\`, open it, drag MacSentinel.app to Applic
     ok "GitHub release: ${GH_RELEASE_URL}"
 else
     echo "  • Skip GitHub publish (gh CLI / git remote not configured)"
+fi
+
+# ─── 11. Update appcast.xml (Sparkle in-app updates) ──────────────────────
+if [[ -f "${APPCAST}" ]] && git -C "${PROJECT_ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
+    step "Updating Sparkle appcast.xml"
+
+    # Sign the DMG with Ed25519 (private key in keychain). Outputs e.g.:
+    #   sparkle:edSignature="abc..." length="4548969"
+    SIG_LINE=$("${SPARKLE_BIN}/sign_update" "${DMG_FINAL}")
+    DMG_LENGTH=$(stat -f%z "${DMG_FINAL}")
+    PUB_DATE=$(LC_TIME=C TZ=GMT date "+%a, %d %b %Y %H:%M:%S +0000")
+
+    NEW_ITEM=$(cat <<EOF
+        <item>
+            <title>Version ${VERSION}</title>
+            <pubDate>${PUB_DATE}</pubDate>
+            <sparkle:version>${VERSION}</sparkle:version>
+            <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>See the full changelog on <a href="https://github.com/cenxialiu7-cloud/MacSentinel/releases/tag/${TAG}">GitHub</a>.</p>
+            ]]></description>
+            <enclosure
+                url="${DMG_DOWNLOAD_URL}"
+                ${SIG_LINE}
+                type="application/octet-stream"/>
+        </item>
+EOF
+)
+
+    # Insert immediately after </language> (top of channel). awk is portable on macOS.
+    TMP_CAST=$(mktemp)
+    awk -v item="${NEW_ITEM}" '
+        /<\/language>/ && !done { print; print item; done=1; next }
+        { print }
+    ' "${APPCAST}" > "${TMP_CAST}"
+    mv "${TMP_CAST}" "${APPCAST}"
+
+    # Commit & push
+    cd "${PROJECT_ROOT}"
+    if ! git diff --quiet appcast.xml; then
+        git add appcast.xml
+        git commit -m "appcast: publish v${VERSION}" >/dev/null
+        git push origin HEAD:main >/dev/null 2>&1 || echo "  ⚠ git push failed — appcast committed locally"
+        ok "appcast.xml updated and pushed"
+    else
+        echo "  • appcast already up-to-date"
+    fi
+else
+    echo "  • Skip appcast update (appcast.xml or git repo missing)"
 fi
 
 cat <<EOF

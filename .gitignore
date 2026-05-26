@@ -52,3 +52,6 @@ notary-*.log
 .swiftpm/
 Packages/
 Package.resolved
+
+# ─── Sparkle CLI tools (bootstrap-downloaded by release.sh) ───────────
+Scripts/sparkle-bin/
