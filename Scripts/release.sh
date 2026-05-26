@@ -162,6 +162,58 @@ spctl --assess --type open --context context:primary-signature -vv "${DMG_FINAL}
 spctl --assess --type execute -vv "${BUILT_APP}" 2>&1 | tail -3 || true
 
 SIZE=$(du -h "${DMG_FINAL}" | cut -f1)
+
+# ─── 10. Publish to GitHub Releases ───────────────────────────────────────
+# Skips silently if not in a git repo, no `gh` CLI, or no `origin` remote.
+GH_RELEASE_URL=""
+if command -v gh >/dev/null && git -C "${PROJECT_ROOT}" rev-parse --git-dir >/dev/null 2>&1 \
+   && git -C "${PROJECT_ROOT}" remote get-url origin >/dev/null 2>&1; then
+    step "Publishing v${VERSION} to GitHub Releases"
+
+    TAG="v${VERSION}"
+    cd "${PROJECT_ROOT}"
+
+    # Warn (don't block) on uncommitted changes
+    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+        echo "  ⚠ uncommitted changes in working tree — tag will point at last commit"
+    fi
+
+    # Create tag if missing
+    if git rev-parse "${TAG}" >/dev/null 2>&1; then
+        echo "  • tag ${TAG} already exists, reusing"
+    else
+        git tag "${TAG}"
+        git push origin "${TAG}"
+        echo "  • tag ${TAG} pushed"
+    fi
+
+    # Skip if a release with this tag already exists
+    if gh release view "${TAG}" >/dev/null 2>&1; then
+        echo "  • release ${TAG} already exists — uploading DMG as additional asset"
+        gh release upload "${TAG}" "${DMG_FINAL}" --clobber
+    else
+        gh release create "${TAG}" "${DMG_FINAL}" \
+            --title "MacSentinel ${VERSION}" \
+            --notes "Apple notarized release.
+
+## Install
+Download \`$(basename "${DMG_FINAL}")\`, open it, drag MacSentinel.app to Applications.
+
+## Signature
+- Developer ID Application: Shun Ching YU (${TEAM_ID})
+- Notarized & stapled by Apple
+- Gatekeeper: \`source=Notarized Developer ID\`
+
+## Requirements
+- macOS 14.0 (Sonoma) or later
+- Universal Binary (Apple Silicon + Intel)"
+    fi
+    GH_RELEASE_URL=$(gh release view "${TAG}" --json url --jq .url 2>/dev/null || true)
+    ok "GitHub release: ${GH_RELEASE_URL}"
+else
+    echo "  • Skip GitHub publish (gh CLI / git remote not configured)"
+fi
+
 cat <<EOF
 
 ════════════════════════════════════════════════════════════════
@@ -172,7 +224,7 @@ cat <<EOF
     Version: ${VERSION}
     Signed:  ${SIGN_IDENTITY}
     Status:  Notarized & Stapled (Gatekeeper-clean)
+    GitHub:  ${GH_RELEASE_URL:-(not published)}
 
-  Distribute by uploading the DMG to your website / GitHub Releases.
 ════════════════════════════════════════════════════════════════
 EOF
