@@ -6,6 +6,8 @@ struct SettingsView: View {
     @AppStorage("tempWarningThreshold")   private var tempWarning: Double   = 85
     @AppStorage("sampleInterval")         private var sampleInterval: Double = 2
     @AppStorage("launchAtLogin")          private var launchAtLogin: Bool   = false
+    @AppStorage(MonetizationConfig.showSponsorMessagesKey)
+    private var showSponsorMessages: Bool = true
 
     // MCP server state, persisted to disk via MCPConfig
     @State private var mcpConfig: MCPConfig = MCPConfig.load()
@@ -164,8 +166,33 @@ struct SettingsView: View {
                 }
             }
 
+            // ── 支援與贊助 ─────────────────────────────────────────────
+            Section {
+                Toggle("顯示贊助商訊息", isOn: $showSponsorMessages)
+                    .help("關閉後，Dashboard 頂部的 VPN / 合作夥伴橫幅將不再顯示。")
+
+                if let offer = MonetizationConfig.primaryVPNOffer, let url = offer.url {
+                    LabeledContent(offer.headline) {
+                        Link(offer.ctaTitle, destination: url)
+                            .font(.callout)
+                    }
+                }
+
+                if let kofi = MonetizationConfig.donationURL {
+                    LabeledContent("贊助開發") {
+                        Link("☕ Ko-fi", destination: kofi)
+                            .font(.callout)
+                    }
+                }
+            } header: {
+                Text("支援與贊助")
+            } footer: {
+                Text("MacSentinel 完全免費且開放原始碼。若覺得有用，可以透過上述連結支持持續開發；所有外連點擊都會透過你的預設瀏覽器開啟，App 本身不載入任何第三方追蹤腳本。")
+                    .font(.caption2)
+            }
+
             Section("關於") {
-                LabeledContent("版本", value: "MacSentinel 1.1.1")
+                LabeledContent("版本", value: "MacSentinel 1.1.2")
                 LabeledContent("最低系統", value: "macOS 14.0 Sonoma")
                 LabeledContent("架構", value: "Swift 5.10 · SwiftUI · IOKit · MCP")
                 Button("開源致謝與授權") { showAttribution = true }
