@@ -60,7 +60,7 @@ if [[ ! -x "${SPARKLE_BIN}/sign_update" ]]; then
     rm -f "${TMP_TAR}"
     ok "Sparkle CLI tools ready"
 fi
-"${SPARKLE_BIN}/sign_update" -p >/dev/null 2>&1 \
+"${SPARKLE_BIN}/generate_keys" -p >/dev/null 2>&1 \
   || die "Sparkle Ed25519 private key not found in keychain. Run: ${SPARKLE_BIN}/generate_keys"
 
 # ─── 1. Regenerate Xcode project ──────────────────────────────────────────
@@ -92,25 +92,64 @@ BUILT_APP="${DERIVED}/Build/Products/Release/${APP_NAME}.app"
 ok "Built: ${BUILT_APP}"
 
 # ─── 4. Re-sign nested binaries (defence-in-depth) ────────────────────────
-# Sign inner→outer to satisfy hardened-runtime nested-code rules. xcodebuild
-# already signs, but a clean codesign --deep ensures everything is consistent.
+# Sign inner→outer to satisfy hardened-runtime + notarization rules.
+# Sparkle's nested executables (Updater.app, XPCServices, Autoupdate) ship
+# signed by the Sparkle project — Apple notary rejects unless we re-sign with
+# our own Developer ID while preserving their entitlements.
 step "Deep-signing app bundle"
+
+SPARKLE_FW="${BUILT_APP}/Contents/Frameworks/Sparkle.framework"
+SPARKLE_VERS="${SPARKLE_FW}/Versions/B"
+
+sign_with_preserved_entitlements() {
+    local target="$1"
+    codesign --force --timestamp --options runtime \
+        --preserve-metadata=entitlements,identifier,flags \
+        --sign "${SIGN_IDENTITY}" "${target}"
+}
+
+if [[ -d "${SPARKLE_FW}" ]]; then
+    # 1. XPC services (deepest)
+    for xpc in "${SPARKLE_VERS}/XPCServices"/*.xpc; do
+        [[ -d "${xpc}" ]] || continue
+        sign_with_preserved_entitlements "${xpc}"
+        echo "  signed: $(basename "${xpc}")"
+    done
+
+    # 2. Updater.app (must sign the inner binary first, then the bundle)
+    if [[ -d "${SPARKLE_VERS}/Updater.app" ]]; then
+        sign_with_preserved_entitlements "${SPARKLE_VERS}/Updater.app/Contents/MacOS/Updater"
+        sign_with_preserved_entitlements "${SPARKLE_VERS}/Updater.app"
+        echo "  signed: Updater.app"
+    fi
+
+    # 3. Autoupdate helper binary
+    if [[ -f "${SPARKLE_VERS}/Autoupdate" ]]; then
+        sign_with_preserved_entitlements "${SPARKLE_VERS}/Autoupdate"
+        echo "  signed: Autoupdate"
+    fi
+
+    # 4. Sparkle framework itself (must come after inner items)
+    codesign --force --timestamp --options runtime \
+        --sign "${SIGN_IDENTITY}" "${SPARKLE_FW}"
+    echo "  signed: Sparkle.framework"
+fi
 
 # Sign embedded MCP CLI (no entitlements file — inherits hardened runtime)
 MCP_BIN="${BUILT_APP}/Contents/MacOS/macsentinel-mcp"
 if [[ -f "${MCP_BIN}" ]]; then
     codesign --force --timestamp --options runtime \
         --sign "${SIGN_IDENTITY}" "${MCP_BIN}"
-    ok "signed: macsentinel-mcp"
+    echo "  signed: macsentinel-mcp"
 fi
 
-# Sign main app with its entitlements
+# Sign main app with its entitlements (outermost)
 codesign --force --timestamp --options runtime \
     --entitlements "${PROJECT_ROOT}/MacSentinel/App/MacSentinel.entitlements" \
     --sign "${SIGN_IDENTITY}" "${BUILT_APP}"
 
-# Verify
-codesign --verify --strict --verbose=2 "${BUILT_APP}" 2>&1 | tail -5
+# Verify (strict deep check)
+codesign --verify --strict --deep --verbose=2 "${BUILT_APP}" 2>&1 | tail -8
 ok "Signature verified"
 
 # ─── 5. Notarize the .app ─────────────────────────────────────────────────
@@ -246,7 +285,10 @@ if [[ -f "${APPCAST}" ]] && git -C "${PROJECT_ROOT}" rev-parse --git-dir >/dev/n
     DMG_LENGTH=$(stat -f%z "${DMG_FINAL}")
     PUB_DATE=$(LC_TIME=C TZ=GMT date "+%a, %d %b %Y %H:%M:%S +0000")
 
-    NEW_ITEM=$(cat <<EOF
+    # Write the new <item> to a file first — passing multi-line content via
+    # `awk -v` is not portable on macOS (parse-error on embedded newlines).
+    NEW_ITEM_FILE=$(mktemp -t macsentinel-appcast-item).xml
+    cat > "${NEW_ITEM_FILE}" <<EOF
         <item>
             <title>Version ${VERSION}</title>
             <pubDate>${PUB_DATE}</pubDate>
@@ -262,15 +304,21 @@ if [[ -f "${APPCAST}" ]] && git -C "${PROJECT_ROOT}" rev-parse --git-dir >/dev/n
                 type="application/octet-stream"/>
         </item>
 EOF
-)
 
-    # Insert immediately after </language> (top of channel). awk is portable on macOS.
+    # Insert the item file right after </language> using awk's getline-from-file.
     TMP_CAST=$(mktemp)
-    awk -v item="${NEW_ITEM}" '
-        /<\/language>/ && !done { print; print item; done=1; next }
+    awk -v itemfile="${NEW_ITEM_FILE}" '
+        /<\/language>/ && !done {
+            print
+            while ((getline line < itemfile) > 0) print line
+            close(itemfile)
+            done=1
+            next
+        }
         { print }
     ' "${APPCAST}" > "${TMP_CAST}"
     mv "${TMP_CAST}" "${APPCAST}"
+    rm -f "${NEW_ITEM_FILE}"
 
     # Commit & push
     cd "${PROJECT_ROOT}"
