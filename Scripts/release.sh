@@ -16,9 +16,12 @@ APP_NAME="MacSentinel"
 VERSION="1.1.2"
 SCHEME="${APP_NAME}"
 
-TEAM_ID="U58M43YXTJ"
-SIGN_IDENTITY="Developer ID Application: Shun Ching YU (${TEAM_ID})"
 NOTARY_PROFILE="MacSentinel-Notary"
+# Signing identity & Team ID are auto-detected from the login keychain at
+# pre-flight time (see step 0) so this script can be committed publicly
+# without leaking the developer's real name or Team ID.
+SIGN_IDENTITY=""   # populated below: SHA-1 fingerprint of Developer ID Application cert
+TEAM_ID=""         # populated below: extracted from the cert's OU
 
 DIST_DIR="${PROJECT_ROOT}/dist"
 BUILD_DIR="${PROJECT_ROOT}/build/release"
@@ -39,12 +42,23 @@ DMG_DOWNLOAD_URL="https://github.com/cenxialiu7-cloud/MacSentinel/releases/downl
 
 # ─── 0. Pre-flight checks ─────────────────────────────────────────────────
 step "Pre-flight checks"
-security find-identity -v -p codesigning | grep -q "${SIGN_IDENTITY}" \
-  || die "Developer ID Application identity not found in keychain"
+
+# Auto-detect first Developer ID Application identity from login keychain.
+# codesign accepts a SHA-1 fingerprint directly, so we never need to hard-code
+# the developer's name / Team ID into a publicly-committed script.
+IDENTITY_LINE=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1)
+[[ -n "${IDENTITY_LINE}" ]] || die "No 'Developer ID Application' identity found in login keychain"
+SIGN_IDENTITY=$(echo "${IDENTITY_LINE}" | awk '{print $2}')   # SHA-1 hash, e.g. 88D1...
+# Extract 10-char Team ID from the certificate's Subject OU
+TEAM_ID=$(security find-certificate -c "Developer ID Application" -p 2>/dev/null \
+  | openssl x509 -noout -subject 2>/dev/null \
+  | grep -oE "OU *= *[A-Z0-9]{10}" | head -1 | awk -F= '{gsub(/ /,"",$2); print $2}')
+[[ -n "${TEAM_ID}" ]] || die "Could not extract Team ID from Developer ID Application certificate"
+
 xcrun notarytool history --keychain-profile "${NOTARY_PROFILE}" >/dev/null 2>&1 \
   || die "Notary profile '${NOTARY_PROFILE}' not set up. Run: xcrun notarytool store-credentials ${NOTARY_PROFILE} ..."
 command -v xcodegen >/dev/null || die "xcodegen not installed (brew install xcodegen)"
-ok "Signing identity & notary profile present"
+ok "Signing identity ${SIGN_IDENTITY:0:8}… (Team ${TEAM_ID}) & notary profile present"
 
 # Bootstrap Sparkle CLI tools (sign_update, generate_keys, generate_appcast)
 if [[ ! -x "${SPARKLE_BIN}/sign_update" ]]; then
@@ -261,9 +275,10 @@ if command -v gh >/dev/null && git -C "${PROJECT_ROOT}" rev-parse --git-dir >/de
 Download \`$(basename "${DMG_FINAL}")\`, open it, drag MacSentinel.app to Applications.
 
 ## Signature
-- Developer ID Application: Shun Ching YU (${TEAM_ID})
+- Signed with Apple Developer ID
 - Notarized & stapled by Apple
 - Gatekeeper: \`source=Notarized Developer ID\`
+- Verify locally: \`codesign -dvv /Applications/MacSentinel.app\`
 
 ## Requirements
 - macOS 14.0 (Sonoma) or later
@@ -342,7 +357,7 @@ cat <<EOF
     File:    ${DMG_FINAL}
     Size:    ${SIZE}
     Version: ${VERSION}
-    Signed:  ${SIGN_IDENTITY}
+    Signed:  Developer ID (Team ${TEAM_ID}, cert ${SIGN_IDENTITY:0:8}…)
     Status:  Notarized & Stapled (Gatekeeper-clean)
     GitHub:  ${GH_RELEASE_URL:-(not published)}
 
