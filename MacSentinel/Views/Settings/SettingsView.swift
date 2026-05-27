@@ -202,7 +202,7 @@ struct SettingsView: View {
             }
 
             Section("關於") {
-                LabeledContent("版本", value: "MacSentinel 1.1.3")
+                LabeledContent("版本", value: "MacSentinel 1.1.4")
                 LabeledContent("最低系統", value: "macOS 14.0 Sonoma")
                 LabeledContent("架構", value: "Swift 5.10 · SwiftUI · IOKit · MCP")
                 Button("開源致謝與授權") { showAttribution = true }
@@ -513,16 +513,19 @@ struct AttributionSheet: View {
 // MARK: - Whitelist editor
 
 struct WhitelistEditor: View {
-    @State private var list = UserWhitelist.shared
+    /// Local mirror of `UserWhitelist.shared.snapshot()` — refreshed after each
+    /// mutation so SwiftUI re-renders without needing the singleton to be
+    /// Observable (which it intentionally isn't, to stay thread-safe).
+    @State private var paths: [String] = UserWhitelist.shared.snapshot()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if list.paths.isEmpty {
+            if paths.isEmpty {
                 Text("目前沒有自訂白名單。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(list.paths, id: \.self) { p in
+                ForEach(paths, id: \.self) { p in
                     HStack {
                         Image(systemName: "folder.fill")
                             .foregroundStyle(.secondary)
@@ -533,7 +536,8 @@ struct WhitelistEditor: View {
                             .truncationMode(.middle)
                         Spacer()
                         Button {
-                            list.remove(p)
+                            UserWhitelist.shared.remove(p)
+                            paths = UserWhitelist.shared.snapshot()
                         } label: {
                             Image(systemName: "minus.circle.fill")
                                 .foregroundStyle(.red)
@@ -552,10 +556,13 @@ struct WhitelistEditor: View {
                 }
                 .controlSize(.small)
                 Spacer()
-                if !list.paths.isEmpty {
-                    Button("全部清除") { list.reset() }
-                        .controlSize(.small)
-                        .tint(.red)
+                if !paths.isEmpty {
+                    Button("全部清除") {
+                        UserWhitelist.shared.reset()
+                        paths = UserWhitelist.shared.snapshot()
+                    }
+                    .controlSize(.small)
+                    .tint(.red)
                 }
             }
         }
@@ -568,7 +575,8 @@ struct WhitelistEditor: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
-            list.add(url.path)
+            UserWhitelist.shared.add(url.path)
+            paths = UserWhitelist.shared.snapshot()
         }
     }
 }

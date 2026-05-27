@@ -2,43 +2,45 @@
 //  UserWhitelist.swift
 //  MacSentinel
 //
-//  User-defined "never scan" list. Persisted to UserDefaults under
-//  the key `userScanWhitelist`. Used by CacheScanner, LargeFileScanner
-//  and DuplicateScanner to filter out paths the user has explicitly
-//  marked as off-limits.
+//  User-defined "never scan" list. Persisted to UserDefaults under the key
+//  `userScanWhitelist`. Used by CacheScanner, LargeFileScanner,
+//  DuplicateScanner and DiskHotspotService to filter out paths the user has
+//  explicitly marked as off-limits.
 //
-//  This is independent from ProtectedPaths (system-level safety rules)
-//  — that one is hard-coded, this one is user-editable.
+//  Thread-safe: all accessors are guarded by an internal NSLock so any
+//  background scanner worker can call `isWhitelisted(_:)` without ever
+//  touching the main actor. UI consumers should re-read `snapshot()` after
+//  calling a mutator.
 //
 
 import Foundation
-import Observation
 
-@MainActor
-@Observable
-final class UserWhitelist {
+final class UserWhitelist: @unchecked Sendable {
 
     static let shared = UserWhitelist()
 
-    /// Sorted list of canonical absolute paths.
-    private(set) var paths: [String] = []
-
+    private let lock = NSLock()
+    private var _paths: [String] = []
     private let defaultsKey = "userScanWhitelist"
 
-    private init() {
-        load()
+    private init() { loadFromDefaults() }
+
+    // MARK: - Reads
+
+    /// Return a sorted snapshot of whitelisted paths. Safe from any thread.
+    func snapshot() -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return _paths
     }
 
-    // MARK: - Public API
-
-    /// Returns true if `path` exactly matches any whitelisted entry, or sits
-    /// underneath any whitelisted directory. Comparison is case-insensitive on
-    /// macOS HFS+ / APFS default (case-insensitive) semantics.
-    nonisolated func isWhitelisted(_ path: String) -> Bool {
+    /// Return true if `path` matches any whitelisted entry exactly, or sits
+    /// underneath one. Safe from any thread (scanner workers call this).
+    func isWhitelisted(_ path: String) -> Bool {
         let canon = (path as NSString).standardizingPath.lowercased()
-        // Snapshot current paths outside main actor for thread safety
-        let snapshot = MainActor.assumeIsolated { paths }
-        for entry in snapshot {
+        lock.lock()
+        let pathsCopy = _paths
+        lock.unlock()
+        for entry in pathsCopy {
             let e = entry.lowercased()
             if canon == e || canon.hasPrefix(e.hasSuffix("/") ? e : e + "/") {
                 return true
@@ -47,35 +49,43 @@ final class UserWhitelist {
         return false
     }
 
-    @MainActor
+    // MARK: - Mutators
+
     func add(_ rawPath: String) {
         let canon = (rawPath as NSString).standardizingPath
-        guard !canon.isEmpty, !paths.contains(canon) else { return }
-        paths.append(canon)
-        paths.sort()
+        guard !canon.isEmpty else { return }
+        lock.lock()
+        if !_paths.contains(canon) {
+            _paths.append(canon)
+            _paths.sort()
+        }
+        lock.unlock()
         persist()
     }
 
-    @MainActor
     func remove(_ path: String) {
-        paths.removeAll { $0 == path }
+        lock.lock()
+        _paths.removeAll { $0 == path }
+        lock.unlock()
         persist()
     }
 
-    @MainActor
     func reset() {
-        paths.removeAll()
+        lock.lock()
+        _paths.removeAll()
+        lock.unlock()
         persist()
     }
 
     // MARK: - Persistence
 
-    private func load() {
+    private func loadFromDefaults() {
         let arr = UserDefaults.standard.stringArray(forKey: defaultsKey) ?? []
-        paths = arr.sorted()
+        lock.lock(); _paths = arr.sorted(); lock.unlock()
     }
 
     private func persist() {
-        UserDefaults.standard.set(paths, forKey: defaultsKey)
+        lock.lock(); let copy = _paths; lock.unlock()
+        UserDefaults.standard.set(copy, forKey: defaultsKey)
     }
 }

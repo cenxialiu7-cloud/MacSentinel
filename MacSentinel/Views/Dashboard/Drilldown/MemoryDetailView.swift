@@ -85,11 +85,16 @@ struct MemoryDetailView: View {
         isPurging = false
     }
 
-    /// Invoke /usr/bin/purge via osascript with administrator privileges.
-    /// Returns a human-readable status message.
+    /// Invoke `purge` via osascript with administrator privileges.
+    /// macOS keeps the binary at /usr/sbin/purge (not /usr/bin/purge), so we
+    /// probe both common locations before giving up.
     private static func invokePurge() async -> String {
         await Task.detached(priority: .userInitiated) {
-            let script = "do shell script \"/usr/bin/purge\" with administrator privileges"
+            let candidates = ["/usr/sbin/purge", "/usr/bin/purge"]
+            guard let purgePath = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+                return "失敗：找不到 purge 指令（已在 /usr/sbin/ 與 /usr/bin/ 兩個位置嘗試）。"
+            }
+            let script = "do shell script \"\(purgePath)\" with administrator privileges"
             var err: NSDictionary?
             NSAppleScript(source: script)?.executeAndReturnError(&err)
             if let err = err {
