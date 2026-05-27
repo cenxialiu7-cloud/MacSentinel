@@ -224,6 +224,9 @@ final class CacheScanner {
             let lastComponent = (path as NSString).lastPathComponent
             if lastComponent == ".DS_Store" || lastComponent.hasPrefix(".DS_Store") { continue }
 
+            // ── User whitelist: skip paths the user opted out of ──
+            if UserWhitelist.shared.isWhitelisted(path) { continue }
+
             let url = URL(fileURLWithPath: path)
             guard fm.fileExists(atPath: path) else { continue }
             let size = await SafeDeleteService.shared.sizeOfItems([url])

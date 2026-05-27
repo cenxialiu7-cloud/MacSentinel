@@ -126,6 +126,27 @@ final class CacheCleanerViewModel {
 
 struct CacheCleanerView: View {
     @State private var vm = CacheCleanerViewModel()
+    @State private var filter: CacheFilter = .all
+
+    /// Categories that pass the current filter (system / developer / all).
+    private var filteredCategories: [CacheCategory] {
+        guard let result = vm.scanResult else { return [] }
+        switch filter {
+        case .all:
+            return result.categories
+        case .system:
+            return result.categories.filter { $0.type != .devToolCache }
+        case .developer:
+            return result.categories.filter { $0.type == .devToolCache }
+        }
+    }
+
+    /// Reclaimable bytes within the current filter scope (for summary text).
+    private var filteredReclaimable: UInt64 {
+        filteredCategories.reduce(0) { sum, cat in
+            sum + cat.items.reduce(0) { $0 + $1.sizeBytes }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -173,17 +194,40 @@ struct CacheCleanerView: View {
 
             Divider()
 
-            if let result = vm.scanResult {
-                List {
-                    ForEach(result.categories) { category in
-                        CacheCategoryRow(
-                            category: category,
-                            onToggleCategory: { vm.toggleCategory(category.id) },
-                            onToggleItem: { itemID in vm.toggleItem(categoryID: category.id, itemID: itemID) }
-                        )
+            if let _ = vm.scanResult {
+                // Filter picker — split caches into 系統 / 開發者 sub-views
+                Picker("分類", selection: $filter) {
+                    ForEach(CacheFilter.allCases) { f in
+                        Text(f.label).tag(f)
                     }
                 }
-                .listStyle(.inset)
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(Color(NSColor.controlBackgroundColor))
+
+                Divider()
+
+                if filteredCategories.isEmpty {
+                    ContentUnavailableView(
+                        filter == .developer ? "沒有發現開發者快取" : "此分類沒有可清的項目",
+                        systemImage: filter.icon,
+                        description: Text(filter == .developer
+                            ? "未發現 Xcode DerivedData / npm / Gradle / Pods 等開發者快取。"
+                            : "目前沒有符合此分類的可清檔案。")
+                    )
+                } else {
+                    List {
+                        ForEach(filteredCategories) { category in
+                            CacheCategoryRow(
+                                category: category,
+                                onToggleCategory: { vm.toggleCategory(category.id) },
+                                onToggleItem: { itemID in vm.toggleItem(categoryID: category.id, itemID: itemID) }
+                            )
+                        }
+                    }
+                    .listStyle(.inset)
+                }
             } else if vm.lastCleanedBytes > 0 {
                 VStack(spacing: 16) {
                     ContentUnavailableView {
@@ -270,6 +314,32 @@ struct CacheCategoryRow: View {
                 Text(category.displaySize)
                     .font(.subheadline.bold().monospacedDigit())
             }
+        }
+    }
+}
+
+// MARK: - Cache filter (system / developer / all)
+
+enum CacheFilter: String, CaseIterable, Identifiable {
+    case all
+    case system
+    case developer
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all:       return "全部"
+        case .system:    return "系統"
+        case .developer: return "開發者"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .all:       return "tray.full"
+        case .system:    return "apple.logo"
+        case .developer: return "hammer"
         }
     }
 }

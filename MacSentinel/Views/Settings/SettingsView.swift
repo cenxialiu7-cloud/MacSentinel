@@ -166,6 +166,16 @@ struct SettingsView: View {
                 }
             }
 
+            // ── 掃描白名單（使用者自訂永不掃路徑）──────────────────────
+            Section {
+                WhitelistEditor()
+            } header: {
+                Text("掃描白名單")
+            } footer: {
+                Text("加入此處的路徑（含子目錄）將不會出現在快取、大檔/舊檔、重複檔案任何掃描結果中。系統保護路徑由 MacSentinel 內建，無法停用。")
+                    .font(.caption2)
+            }
+
             // ── 支援與贊助 ─────────────────────────────────────────────
             Section {
                 Toggle("顯示贊助商訊息", isOn: $showSponsorMessages)
@@ -497,6 +507,69 @@ struct AttributionSheet: View {
         }
         .padding(20)
         .frame(width: 560, height: 580)
+    }
+}
+
+// MARK: - Whitelist editor
+
+struct WhitelistEditor: View {
+    @State private var list = UserWhitelist.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if list.paths.isEmpty {
+                Text("目前沒有自訂白名單。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(list.paths, id: \.self) { p in
+                    HStack {
+                        Image(systemName: "folder.fill")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                        Text(p)
+                            .font(.caption)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button {
+                            list.remove(p)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.red)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("移除")
+                    }
+                }
+            }
+
+            HStack {
+                Button {
+                    pickFolderToAdd()
+                } label: {
+                    Label("加入資料夾…", systemImage: "plus")
+                }
+                .controlSize(.small)
+                Spacer()
+                if !list.paths.isEmpty {
+                    Button("全部清除") { list.reset() }
+                        .controlSize(.small)
+                        .tint(.red)
+                }
+            }
+        }
+    }
+
+    private func pickFolderToAdd() {
+        let panel = NSOpenPanel()
+        panel.title = "選擇要加入白名單的資料夾"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            list.add(url.path)
+        }
     }
 }
 

@@ -4,6 +4,8 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     case dashboard   = "Dashboard"
     case processes   = "行程管理"
     case cleaner     = "快取清理"
+    case largeFiles  = "大檔/舊檔"
+    case duplicates  = "重複檔案"
     case uninstaller = "App 移除"
     case migration   = "舊資料掃描"
     case browsers    = "瀏覽器安全"
@@ -18,6 +20,8 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .dashboard:   return "gauge.with.dots.needle.bottom.50percent"
         case .processes:   return "list.bullet.rectangle"
         case .cleaner:     return "trash.fill"
+        case .largeFiles:  return "doc.text.magnifyingglass"
+        case .duplicates:  return "doc.on.doc.fill"
         case .uninstaller: return "xmark.app.fill"
         case .migration:   return "arrow.triangle.2.circlepath.circle"
         case .browsers:    return "shield.lefthalf.filled"
@@ -32,6 +36,8 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .dashboard:   return .blue
         case .processes:   return .green
         case .cleaner:     return .orange
+        case .largeFiles:  return .yellow
+        case .duplicates:  return .mint
         case .uninstaller: return .red
         case .migration:   return .purple
         case .browsers:    return .indigo
@@ -54,6 +60,8 @@ struct ContentView: View {
                 case .dashboard:   DashboardView()
                 case .processes:   ProcessListView()
                 case .cleaner:     CacheCleanerView()
+                case .largeFiles:  LargeFileView()
+                case .duplicates:  DuplicateFileView()
                 case .uninstaller: AppUninstallerView()
                 case .migration:   MigrationScanView()
                 case .browsers:    BrowserScanView()
