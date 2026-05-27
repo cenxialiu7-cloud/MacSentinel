@@ -131,6 +131,7 @@ targets:
         excludes:
           - PermissionService.swift             # main-app only (NSWorkspace launch)
           - PrivilegedHelperConnection.swift    # main-app only (SMAppService)
+      - path: MacSentinel/Services/Startup      # StartupItemService (knowledge-base eval)
       - path: MacSentinel/Services/SystemData   # System snapshot (read-only)
       - path: MacSentinel/Services/AI           # AIScanReporter (JSON formatting reused)
       - path: MacSentinel/Bridge                # SMC + IOKit + Thermal bridges

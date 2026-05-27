@@ -3,98 +3,112 @@ import ServiceManagement
 
 // MARK: - macsentinel.scan_login_items
 //
-// Enumerates macOS Login Items / Background Items via SMAppService.
-// Note: SMAppService can only return state for items registered by THIS
-// app's bundle. To enumerate ALL user login items we shell out to
-// `osascript` + `sfltool` (no privileges required; both are user-callable).
+// Enumerates every LaunchAgent / LaunchDaemon plist on the machine across
+// the three standard locations and decorates each with a recommendation
+// drawn from the StartupKnowledgeBase (40+ rules covering security
+// software, backups, updaters, cloud sync, messaging, dev daemons,
+// Apple system services). AI assistants use the `recommendation` +
+// `reason` fields to advise users which items to disable.
 
 struct ScanLoginItemsTool: MCPToolHandler {
     let tool = MCPTool(
         name: "macsentinel.scan_login_items",
         description: """
-            Enumerate macOS Login Items and background launch agents/daemons
-            registered for the current user. Combines AppleScript's
-            `System Events → login items`, `sfltool dumpbtm` (Background Task
-            Management) and ~/Library/LaunchAgents/. Read-only.
+            Enumerate every LaunchAgent / LaunchDaemon plist installed across
+            ~/Library/LaunchAgents, /Library/LaunchAgents, /Library/LaunchDaemons.
+            For each item the response includes a heuristic recommendation
+            ("shouldEnable" / "shouldDisable" / "neutral") and a 中文 reason
+            drawn from a built-in 40+ rule knowledge base. AI assistants
+            should use these to help the user decide what to keep enabled.
+
+            Use `suggest_disable_only=true` to get just the items the
+            knowledge base recommends turning off (and which are currently
+            enabled) — the highest-signal answer for "what should I turn off?"
+
+            Read-only. Toggling items requires admin password and is exposed
+            only in the GUI.
             """,
         inputSchema: .object([
             "type": .string("object"),
-            "properties": .object([:]),
+            "properties": .object([
+                "only_enabled": .object([
+                    "type": .string("boolean"),
+                    "description": .string("If true, only return items that are currently enabled (default false)"),
+                ]),
+                "suggest_disable_only": .object([
+                    "type": .string("boolean"),
+                    "description": .string("If true, only return items whose recommendation is 'shouldDisable' AND are currently enabled — i.e. the highest-value cleanup candidates"),
+                ]),
+            ]),
             "additionalProperties": .bool(false),
         ])
     )
 
     struct LoginItem: Codable {
+        let label: String
         let name: String
         let path: String
-        let source: String   // "osascript", "sfltool", "launchagent"
-        let isHidden: Bool
+        let program: String
+        let enabled: Bool
+        let scope: String           // "user" | "system_agent" | "system_daemon"
+        let recommendation: String  // "shouldEnable" | "shouldDisable" | "neutral"
+        let reason: String          // 中文 rationale
     }
 
     func call(arguments: JSONValue?) async throws -> MCPToolResult {
-        var items: [LoginItem] = []
+        let onlyEnabled        = arguments?.bool("only_enabled") ?? false
+        let suggestDisableOnly = arguments?.bool("suggest_disable_only") ?? false
 
-        // 1. AppleScript user-visible login items
-        let osa = """
-            tell application "System Events"
-                set output to ""
-                repeat with li in (every login item)
-                    set output to output & (name of li) & "|" & (path of li) & "|" & (hidden of li) & "\n"
-                end repeat
-                return output
-            end tell
-            """
-        if let out = runShell("/usr/bin/osascript", ["-e", osa]) {
-            for line in out.split(separator: "\n") {
-                let parts = line.split(separator: "|", omittingEmptySubsequences: false)
-                guard parts.count >= 3 else { continue }
-                items.append(LoginItem(
-                    name: String(parts[0]),
-                    path: String(parts[1]),
-                    source: "osascript",
-                    isHidden: parts[2].lowercased().contains("true")
-                ))
-            }
+        var raw = StartupItemService.collectItemsStatic()
+        if onlyEnabled { raw = raw.filter(\.isEnabled) }
+        if suggestDisableOnly {
+            raw = raw.filter { $0.isEnabled && $0.recommendation == .shouldDisable }
         }
 
-        // 2. sfltool dumpbtm (macOS 13+) — Background Task Management entries
-        if let out = runShell("/usr/bin/sfltool", ["dumpbtm"]) {
-            // Cheap parse: lines starting with "Name:" and "URL:" pair up.
-            var pendingName: String?
-            for raw in out.split(separator: "\n") {
-                let line = raw.trimmingCharacters(in: .whitespaces)
-                if line.hasPrefix("Name:") {
-                    pendingName = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                } else if line.hasPrefix("URL:"), let name = pendingName {
-                    let url = String(line.dropFirst(4)).trimmingCharacters(in: .whitespaces)
-                    items.append(LoginItem(
-                        name: name, path: url,
-                        source: "sfltool", isHidden: false
-                    ))
-                    pendingName = nil
-                }
-            }
-        }
-
-        // 3. ~/Library/LaunchAgents/
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let userAgents = "\(home)/Library/LaunchAgents"
-        if let plists = try? FileManager.default.contentsOfDirectory(atPath: userAgents) {
-            for p in plists where p.hasSuffix(".plist") {
-                items.append(LoginItem(
-                    name: (p as NSString).deletingPathExtension,
-                    path: "\(userAgents)/\(p)",
-                    source: "launchagent",
-                    isHidden: true
-                ))
-            }
+        let items: [LoginItem] = raw.map { it in
+            LoginItem(
+                label: it.label,
+                name: it.name,
+                path: it.path,
+                program: it.program,
+                enabled: it.isEnabled,
+                scope: scopeLabel(for: it),
+                recommendation: machineRec(it.recommendation),
+                reason: it.descriptionText
+            )
         }
 
         struct Envelope: Codable {
             let total: Int
+            let total_enabled: Int
+            let total_suggesting_disable: Int
             let items: [LoginItem]
         }
-        return try toolJSONResult(Envelope(total: items.count, items: items))
+        let env = Envelope(
+            total: items.count,
+            total_enabled: items.filter(\.enabled).count,
+            total_suggesting_disable: items.filter {
+                $0.recommendation == "shouldDisable" && $0.enabled
+            }.count,
+            items: items
+        )
+        return try toolJSONResult(env)
+    }
+
+    private func scopeLabel(for item: StartupItem) -> String {
+        if item.path.contains("/Library/LaunchDaemons") { return "system_daemon" }
+        if item.path.contains("/Library/LaunchAgents")  { return "system_agent" }
+        return "user"
+    }
+
+    /// Map the localised raw enum value to a stable machine-readable key
+    /// for the MCP JSON contract.
+    private func machineRec(_ r: StartupRecommendation) -> String {
+        switch r {
+        case .shouldEnable:  return "shouldEnable"
+        case .shouldDisable: return "shouldDisable"
+        case .neutral:       return "neutral"
+        }
     }
 }
 

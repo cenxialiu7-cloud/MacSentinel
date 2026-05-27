@@ -40,6 +40,13 @@ final class StartupItemService {
     }
 
     nonisolated private func collectItems() -> [StartupItem] {
+        Self.collectItemsStatic()
+    }
+
+    /// Static, non-isolated entry point so the MCP CLI target (which has no
+    /// MainActor / SwiftUI dependency) can reuse the same scanning logic
+    /// without instantiating the GUI service.
+    nonisolated static func collectItemsStatic() -> [StartupItem] {
         var items: [StartupItem] = []
         let fm = FileManager.default
         for dir in Self.agentDirs {
