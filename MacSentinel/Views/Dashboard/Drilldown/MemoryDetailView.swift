@@ -12,12 +12,15 @@ import Charts
 struct MemoryDetailView: View {
     @Environment(SystemDataCollector.self) var collector
     @Environment(ProcessSnapshotService.self) var processes
+    @State private var isPurging = false
+    @State private var purgeMessage: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 if let snap = collector.latestSnapshot {
                     headerSection(snap.memory)
+                    purgeSection(snap.memory)
                     pressureSection(snap.memory)
                     compositionSection(snap.memory)
                     historySection
@@ -29,6 +32,75 @@ struct MemoryDetailView: View {
             .padding(24)
         }
         .navigationTitle("記憶體細節")
+    }
+
+    // MARK: - Purge button
+
+    private func purgeSection(_ m: MemorySnapshot) -> some View {
+        GroupBox {
+            HStack(spacing: 14) {
+                Image(systemName: "wand.and.stars")
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("一鍵釋放可清除的記憶體")
+                        .font(.callout.weight(.medium))
+                    Text("透過 /usr/bin/purge 強制清空檔案快取與 inactive 頁面。需要管理員密碼。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    if let purgeMessage {
+                        Text(purgeMessage)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(purgeMessage.contains("失敗") || purgeMessage.contains("取消")
+                                             ? .orange : .green)
+                            .padding(.top, 2)
+                    }
+                }
+                Spacer()
+                Button {
+                    Task { await runPurge() }
+                } label: {
+                    if isPurging {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("釋放中…")
+                        }
+                    } else {
+                        Text("立即釋放")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isPurging)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func runPurge() async {
+        isPurging = true
+        purgeMessage = nil
+        let result = await Self.invokePurge()
+        purgeMessage = result
+        // Trigger an immediate re-sample so the UI reflects the change
+        await collector.sample()
+        isPurging = false
+    }
+
+    /// Invoke /usr/bin/purge via osascript with administrator privileges.
+    /// Returns a human-readable status message.
+    private static func invokePurge() async -> String {
+        await Task.detached(priority: .userInitiated) {
+            let script = "do shell script \"/usr/bin/purge\" with administrator privileges"
+            var err: NSDictionary?
+            NSAppleScript(source: script)?.executeAndReturnError(&err)
+            if let err = err {
+                if (err["NSAppleScriptErrorNumber"] as? Int) == -128 {
+                    return "已取消（未輸入管理員密碼）。"
+                }
+                let msg = err["NSAppleScriptErrorMessage"] as? String ?? "未知錯誤"
+                return "失敗：\(msg)"
+            }
+            return "已釋放（請查看下方記憶體曲線變化）。"
+        }.value
     }
 
     // MARK: - Header

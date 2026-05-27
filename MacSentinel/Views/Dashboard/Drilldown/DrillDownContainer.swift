@@ -19,8 +19,10 @@ struct DrillDownContainer: View {
                 switch item {
                 case .cpu:     CPUDetailView()
                 case .memory:  MemoryDetailView()
+                case .disk:    DiskDetailView()
                 case .network: NetworkDetailView()
                 case .battery: BatteryDetailView()
+                case .thermal: ThermalDetailView()
                 }
             }
             .toolbar {

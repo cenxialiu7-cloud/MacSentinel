@@ -13,7 +13,7 @@ set -euo pipefail
 # ─── Configuration ────────────────────────────────────────────────────────
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="MacSentinel"
-VERSION="1.1.2"
+VERSION="1.1.3"
 SCHEME="${APP_NAME}"
 
 NOTARY_PROFILE="MacSentinel-Notary"

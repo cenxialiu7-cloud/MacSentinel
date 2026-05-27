@@ -202,7 +202,7 @@ struct SettingsView: View {
             }
 
             Section("關於") {
-                LabeledContent("版本", value: "MacSentinel 1.1.2")
+                LabeledContent("版本", value: "MacSentinel 1.1.3")
                 LabeledContent("最低系統", value: "macOS 14.0 Sonoma")
                 LabeledContent("架構", value: "Swift 5.10 · SwiftUI · IOKit · MCP")
                 Button("開源致謝與授權") { showAttribution = true }

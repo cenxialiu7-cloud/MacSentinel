@@ -53,7 +53,8 @@ struct DashboardView: View {
                             icon: "internaldrive",
                             color: alertColor(snap.disk.alertLevel),
                             history: collector.history.map { $0.disk.usagePercent },
-                            maxValue: 100
+                            maxValue: 100,
+                            onTap: { activeDrillDown = .disk }
                         )
                         MetricCardView(
                             title: "網路 ↓",
@@ -79,6 +80,8 @@ struct DashboardView: View {
                                 .onTapGesture { activeDrillDown = .battery }
                         }
                         ThermalCardView(thermal: snap.thermal)
+                            .contentShape(Rectangle())
+                            .onTapGesture { activeDrillDown = .thermal }
                     }
                 }
             }

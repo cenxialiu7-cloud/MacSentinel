@@ -12,9 +12,10 @@ import Foundation
 enum DashboardDrillDown: Identifiable, Hashable {
     case cpu
     case memory
+    case disk
     case network
     case battery
-    // future: case disk / thermal
+    case thermal
 
     var id: String { String(describing: self) }
 }
