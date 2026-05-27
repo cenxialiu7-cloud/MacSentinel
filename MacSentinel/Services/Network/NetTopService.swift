@@ -53,10 +53,25 @@ final class NetTopService: @unchecked Sendable {
         lineBuffer = ""
         shouldStop = false
 
+        // ── Force line-buffered output ──
+        // `nettop`'s stdout, when piped, is *block-buffered* by libc which
+        // means even with `-L 0 -s 1` (one CSV row per second) nothing is
+        // flushed until the buffer fills (often 4-8 KB → 30-60 seconds of
+        // wait on a quiet machine).
+        //
+        // We work around this by spawning nettop through `/usr/bin/script`,
+        // which gives the child a pty (an interactive terminal) and forces
+        // libc back to line buffering. Result: rows arrive every second as
+        // the user expects.
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
-        p.arguments = ["-P", "-J", "bytes_in,bytes_out",
-                       "-x", "-L", "0", "-d", "-s", "1", "-t", "external"]
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/script")
+        p.arguments = [
+            "-q",                // quiet (no "Script started" banner)
+            "/dev/null",         // no typescript file
+            "/usr/bin/nettop",
+            "-P", "-J", "bytes_in,bytes_out",
+            "-x", "-L", "0", "-d", "-s", "1", "-t", "external"
+        ]
 
         let pipe = Pipe()
         p.standardOutput = pipe
@@ -101,8 +116,10 @@ final class NetTopService: @unchecked Sendable {
 
             lineBuffer.append(text)
             while let nl = lineBuffer.firstIndex(of: "\n") {
-                let line = String(lineBuffer[..<nl])
+                var line = String(lineBuffer[..<nl])
                 lineBuffer = String(lineBuffer[lineBuffer.index(after: nl)...])
+                // Strip trailing CR (PTY emits \r\n line endings)
+                if line.hasSuffix("\r") { line.removeLast() }
                 processLineBackground(line)
             }
         }

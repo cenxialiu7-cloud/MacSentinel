@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBar()
         SystemDataCollector.shared.start()
         ProcessSnapshotService.shared.start()
+        // Opportunistic weekly background scan (NSBackgroundActivityScheduler).
+        BackgroundScanScheduler.shared.register()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

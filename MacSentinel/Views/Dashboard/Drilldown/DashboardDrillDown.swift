@@ -16,6 +16,7 @@ enum DashboardDrillDown: Identifiable, Hashable {
     case network
     case battery
     case thermal
+    case gpu
 
     var id: String { String(describing: self) }
 }

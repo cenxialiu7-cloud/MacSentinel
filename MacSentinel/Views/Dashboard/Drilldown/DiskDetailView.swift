@@ -42,6 +42,7 @@ struct DiskDetailView: View {
                     headerSection(snap.disk)
                 }
                 controlsSection
+                treemapSection
                 hotspotsSection
                 largeFilesSection
             }
@@ -49,6 +50,35 @@ struct DiskDetailView: View {
         }
         .navigationTitle("磁碟細節")
         .task { await vm.refresh() }
+    }
+
+    // MARK: - Treemap
+
+    private var treemapSection: some View {
+        GroupBox("熱點目錄視覺化（依大小比例）") {
+            if vm.hotspots.isEmpty {
+                Text(vm.isLoading ? "正在計算…" : "沒有可顯示的熱點目錄。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                TreemapView(items: vm.hotspots.map { h in
+                    TreemapItem(label: h.label, value: Double(h.sizeBytes), color: treemapColor(for: h))
+                })
+                .frame(height: 220)
+            }
+        }
+    }
+
+    /// Pick a colour per hotspot category so the treemap reads at-a-glance.
+    private func treemapColor(for h: DiskHotspot) -> Color {
+        let l = h.label.lowercased()
+        if l.contains("xcode") || l.contains("ios") || l.contains("simulator") { return .blue }
+        if l.contains("docker") || l.contains("homebrew") || l.contains("npm")
+            || l.contains("gradle") { return .orange }
+        if l.contains("trash") { return .red }
+        if l.contains("cache") || l.contains("log") { return .purple }
+        if l.contains("backup") { return .green }
+        return .gray
     }
 
     // MARK: - Header

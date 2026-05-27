@@ -78,7 +78,7 @@ enum MonetizationConfig {
     ]
 
     // ─── Donation links ────────────────────────────────────────────────────
-    static let donationURL: URL? = URL(string: "https://ko-fi.com/")    // ← real Ko-fi page
+    static let donationURL: URL? = URL(string: "https://ko-fi.com/yoyoisgood")
 
     // ─── User-controlled toggle ────────────────────────────────────────────
     // Backed by UserDefaults so user choice persists. Default ON.

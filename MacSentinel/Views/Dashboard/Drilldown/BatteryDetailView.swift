@@ -13,6 +13,9 @@ struct BatteryDetailView: View {
     @Environment(SystemDataCollector.self) var collector
     @State private var hw: BatteryHardwareInfo?
     @State private var loading = true
+    @State private var energyRows: [EnergyImpactRow] = []
+    @State private var energyMessage: String?
+    @State private var energySampling = false
 
     var body: some View {
         ScrollView {
@@ -21,6 +24,7 @@ struct BatteryDetailView: View {
                     headerSection(snap.battery)
                     healthSection(snap.battery)
                     chargingSection(snap.battery)
+                    energyImpactSection
                     hardwareSection(snap.battery)
                 } else {
                     ContentUnavailableView(
@@ -38,6 +42,87 @@ struct BatteryDetailView: View {
             loading = true
             hw = await BatteryHealthService.fetch()
             loading = false
+        }
+    }
+
+    // MARK: - Per-app Energy Impact (Batch 5b)
+
+    private var energyImpactSection: some View {
+        GroupBox("每個 App 的耗電影響（powermetrics）") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "bolt.fill")
+                        .foregroundStyle(.yellow)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("用 macOS 系統設定 → 電池 同一套指標").font(.callout.weight(.medium))
+                        Text("powermetrics 需要管理員權限（首次會跳密碼對話框）。執行後取一次 1 秒採樣顯示 Top 10。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        if let energyMessage {
+                            Text(energyMessage)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(energyMessage.contains("失敗") || energyMessage.contains("取消") ? .orange : .green)
+                        }
+                    }
+                    Spacer()
+                    Button {
+                        Task { await runEnergySample() }
+                    } label: {
+                        if energySampling {
+                            HStack(spacing: 6) { ProgressView().controlSize(.small); Text("取樣中…") }
+                        } else {
+                            Text(energyRows.isEmpty ? "開始取樣" : "重新取樣")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(energySampling)
+                }
+
+                if !energyRows.isEmpty {
+                    Divider()
+                    ForEach(energyRows) { row in
+                        HStack {
+                            Text(row.name).font(.callout)
+                            Text("PID \(row.id)")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                            Spacer()
+                            Text("CPU \(String(format: "%.0f", row.cpuMsPerSec)) ms/s")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            Text(String(format: "Energy %.1f", row.energyImpact))
+                                .font(.callout.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(energyColor(row.energyImpact))
+                                .frame(width: 100, alignment: .trailing)
+                        }
+                        if row.id != energyRows.last?.id { Divider() }
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func runEnergySample() async {
+        energySampling = true
+        energyMessage = nil
+        let result = await EnergyImpactService.sample(topN: 10)
+        switch result {
+        case .success(let rows):
+            energyRows = rows
+            energyMessage = rows.isEmpty
+                ? "無資料（macOS 可能限制 sampler）"
+                : "已取得 \(rows.count) 筆。"
+        case .failure(let err):
+            energyMessage = err.localizedDescription
+        }
+        energySampling = false
+    }
+
+    private func energyColor(_ impact: Double) -> Color {
+        switch impact {
+        case 100...: return .red
+        case 30...:  return .orange
+        case 10...:  return .yellow
+        default:     return .secondary
         }
     }
 

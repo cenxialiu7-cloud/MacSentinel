@@ -71,7 +71,7 @@ struct DashboardView: View {
                     }
                 }
 
-                // ── Battery + Thermal Row ─────────────────────────────────────
+                // ── Battery + Thermal + GPU Row ─────────────────────────
                 if let snap = collector.latestSnapshot {
                     HStack(spacing: 16) {
                         if snap.battery.isAvailable {
@@ -82,6 +82,8 @@ struct DashboardView: View {
                         ThermalCardView(thermal: snap.thermal)
                             .contentShape(Rectangle())
                             .onTapGesture { activeDrillDown = .thermal }
+                        GPUMiniCard()
+                            .onTapGesture { activeDrillDown = .gpu }
                     }
                 }
             }
@@ -387,6 +389,51 @@ struct AlertBannerView: View {
                     in: RoundedRectangle(cornerRadius: 8)
                 )
             }
+        }
+    }
+}
+
+// MARK: - GPU Mini Card (Dashboard)
+
+struct GPUMiniCard: View {
+    @State private var stats: GPUStats?
+    @State private var hovering = false
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: "cpu.fill").foregroundStyle(.purple)
+                    Text("GPU").font(.headline)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    Text(stats?.devicePercent ?? -1 >= 0
+                         ? String(format: "%.0f%%", stats!.devicePercent)
+                         : "—")
+                        .font(.title3.bold().monospacedDigit())
+                        .foregroundStyle(.purple)
+                }
+                if let s = stats {
+                    Text(s.deviceName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text("VRAM \(ByteFormatter.format(s.vramUsedBytes)) / \(ByteFormatter.format(s.vramBudgetBytes))")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("讀取中…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .scaleEffect(hovering ? 1.01 : 1.0)
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .onHover { isHovering in
+            hovering = isHovering
+            isHovering ? NSCursor.pointingHand.push() : NSCursor.pop()
+        }
+        .task {
+            stats = await GPUStatsService.snapshot().first
         }
     }
 }

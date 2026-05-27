@@ -125,17 +125,56 @@ enum DiskHotspotService {
             guard let text = String(data: data, encoding: .utf8) else { return [] }
 
             let paths = text.split(separator: "\n").map(String.init)
+            let fm = FileManager.default
             var hits: [LargeFileHit] = []
+
             for path in paths {
-                // Skip whitelisted paths
+                // Skip whitelisted paths and .app bundle interiors
                 if UserWhitelist.shared.isWhitelisted(path) { continue }
-                // Skip files inside .app bundles (those are just framework binaries)
                 if path.contains(".app/") { continue }
-                guard let size = (try? FileManager.default
-                    .attributesOfItem(atPath: path)[.size]) as? NSNumber else { continue }
-                hits.append(LargeFileHit(path: path, sizeBytes: size.uint64Value))
+
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: path, isDirectory: &isDir) else { continue }
+
+                let realSize: UInt64
+                if isDir.boolValue {
+                    // Spotlight treats packages (.bundle, .photoslibrary, etc.)
+                    // as single "documents" and may report the inner total — but
+                    // `attributesOfItem` returns just the directory metadata
+                    // (often a few hundred bytes). Compute the real recursive
+                    // size and gate on the original threshold so we don't
+                    // surface a 352-byte .bundle as a "大檔案".
+                    realSize = recursiveSize(of: path)
+                    guard realSize >= minSizeBytes else { continue }
+                } else {
+                    guard let attr = (try? fm.attributesOfItem(atPath: path)[.size]) as? NSNumber,
+                          attr.uint64Value >= minSizeBytes else { continue }
+                    realSize = attr.uint64Value
+                }
+                hits.append(LargeFileHit(path: path, sizeBytes: realSize))
             }
             return hits.sorted { $0.sizeBytes > $1.sizeBytes }.prefix(50).map { $0 }
         }.value
+    }
+
+    /// Sum the file sizes inside a directory (recursive). Used to validate
+    /// Spotlight hits on packages where attributesOfItem only gives the shell.
+    private static func recursiveSize(of path: String) -> UInt64 {
+        let url = URL(fileURLWithPath: path)
+        let fm = FileManager.default
+        var total: UInt64 = 0
+        let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileSizeKey]
+        guard let en = fm.enumerator(
+            at: url, includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles],
+            errorHandler: { _, _ in true }
+        ) else { return 0 }
+        for case let item as URL in en {
+            if let v = try? item.resourceValues(forKeys: Set(keys)) {
+                if let s = v.totalFileAllocatedSize { total &+= UInt64(s) }
+                else if let s = v.fileSize { total &+= UInt64(s) }
+            }
+        }
+        return total
     }
 }

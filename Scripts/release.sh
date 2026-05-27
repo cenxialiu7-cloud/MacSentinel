@@ -13,7 +13,7 @@ set -euo pipefail
 # ─── Configuration ────────────────────────────────────────────────────────
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="MacSentinel"
-VERSION="1.1.4"
+VERSION="1.1.5"
 SCHEME="${APP_NAME}"
 
 NOTARY_PROFILE="MacSentinel-Notary"
@@ -303,11 +303,19 @@ if [[ -f "${APPCAST}" ]] && git -C "${PROJECT_ROOT}" rev-parse --git-dir >/dev/n
     # Write the new <item> to a file first — passing multi-line content via
     # `awk -v` is not portable on macOS (parse-error on embedded newlines).
     NEW_ITEM_FILE=$(mktemp -t macsentinel-appcast-item).xml
+
+    # Sparkle compares <sparkle:version> against the installed app's
+    # CFBundleVersion (build number) — NOT CFBundleShortVersionString.
+    # Extract the build number from Info.plist so Sparkle sees a monotonic
+    # integer and can decide "update available" correctly.
+    BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" \
+        "${BUILT_APP}/Contents/Info.plist" 2>/dev/null || echo "1")
+
     cat > "${NEW_ITEM_FILE}" <<EOF
         <item>
             <title>Version ${VERSION}</title>
             <pubDate>${PUB_DATE}</pubDate>
-            <sparkle:version>${VERSION}</sparkle:version>
+            <sparkle:version>${BUILD_NUMBER}</sparkle:version>
             <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <description><![CDATA[

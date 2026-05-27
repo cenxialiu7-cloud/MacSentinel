@@ -23,6 +23,7 @@ struct DrillDownContainer: View {
                 case .network: NetworkDetailView()
                 case .battery: BatteryDetailView()
                 case .thermal: ThermalDetailView()
+                case .gpu:     GPUDetailView()
                 }
             }
             .toolbar {

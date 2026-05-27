@@ -49,6 +49,23 @@ struct SettingsView: View {
                 Toggle("登入時自動啟動", isOn: $launchAtLogin)
             }
 
+            // ── 排程掃描 ─────────────────────────────────────────────
+            Section {
+                Toggle("啟用每週自動掃描", isOn: Binding(
+                    get: { BackgroundScanScheduler.shared.isEnabled },
+                    set: { BackgroundScanScheduler.shared.isEnabled = $0 }
+                ))
+                Button("立即執行一次") {
+                    Task { await BackgroundScanScheduler.shared.runManually() }
+                }
+                .buttonStyle(.borderless)
+            } header: {
+                Text("排程掃描")
+            } footer: {
+                Text("背景排程使用 NSBackgroundActivityScheduler：macOS 會等到合適的時機（例如低 CPU 或已插電）才執行。若發現可清項目，會發送系統通知。需要先在 Mac 通知設定中允許 MacSentinel 通知。")
+                    .font(.caption2)
+            }
+
             // ── MCP Server (本機 AI 助理整合) ───────────────────────────────
             Section {
                 Toggle("啟用 MCP Server", isOn: $mcpConfig.enabled)
@@ -202,7 +219,7 @@ struct SettingsView: View {
             }
 
             Section("關於") {
-                LabeledContent("版本", value: "MacSentinel 1.1.4")
+                LabeledContent("版本", value: "MacSentinel 1.1.5")
                 LabeledContent("最低系統", value: "macOS 14.0 Sonoma")
                 LabeledContent("架構", value: "Swift 5.10 · SwiftUI · IOKit · MCP")
                 Button("開源致謝與授權") { showAttribution = true }
