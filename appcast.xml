@@ -6,6 +6,20 @@
         <description>MacSentinel updates feed</description>
         <language>zh-Hant</language>
         <item>
+            <title>Version 1.1.7</title>
+            <pubDate>Fri, 05 Jun 2026 09:00:48 +0000</pubDate>
+            <sparkle:version>9</sparkle:version>
+            <sparkle:shortVersionString>1.1.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>See the full changelog on <a href="https://github.com/cenxialiu7-cloud/MacSentinel/releases/tag/v1.1.7">GitHub</a>.</p>
+            ]]></description>
+            <enclosure
+                url="https://github.com/cenxialiu7-cloud/MacSentinel/releases/download/v1.1.7/MacSentinel-1.1.7.dmg"
+                sparkle:edSignature="z54Mkg+/ifwqngrN7v6iHh3ixQgA0XCWCnqGG03W7g2UtDossHpqkY1NOOrrzAGKmZc6AyS8d++Iz+/KhS+bBw==" length="8130955"
+                type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 1.1.6</title>
             <pubDate>Wed, 27 May 2026 03:08:50 +0000</pubDate>
             <sparkle:version>8</sparkle:version>
