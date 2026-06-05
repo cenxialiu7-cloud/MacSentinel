@@ -15,7 +15,7 @@ set -euo pipefail
 # ─── Configuration ────────────────────────────────────────────────────────
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="MacSentinel"
-VERSION="1.1.1"
+VERSION="1.1.7"
 DIST_DIR="${PROJECT_ROOT}/dist"
 SCHEME="${APP_NAME}"
 BUILD_DIR="${PROJECT_ROOT}/build/dmg"

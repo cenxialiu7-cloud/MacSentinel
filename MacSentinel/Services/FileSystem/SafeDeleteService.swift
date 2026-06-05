@@ -64,13 +64,24 @@ actor SafeDeleteService {
     }
 
     /// Public entry point. Tries each tier until one succeeds.
-    func remove(items: [URL], dryRun: Bool = false) async -> DeletionResult {
+    ///
+    /// `policy` controls the strictness of ProtectedPaths:
+    ///   • `.aiSafe` (default) — block user content roots (Documents, Desktop,
+    ///     Downloads, Pictures, Movies, Music, Public). Use for any caller
+    ///     that doesn't represent a human directly clicking the path
+    ///     (MCP tools, batch cleaners, scheduled scans).
+    ///   • `.userExplicit` — the human picked the path in the GUI and can
+    ///     see what's queued. Allow user-content-roots; still hard-block
+    ///     keychain / mail / safari / iCloud / Photos library / system paths.
+    func remove(items: [URL],
+                dryRun: Bool = false,
+                policy: ProtectedPaths.DeletionPolicy = .aiSafe) async -> DeletionResult {
         var result = DeletionResult()
         let fm = FileManager.default
 
         for url in items {
             // 1. ProtectedPaths gate (immutable)
-            guard !ProtectedPaths.isProtected(url) else {
+            guard !ProtectedPaths.isProtected(url, policy: policy) else {
                 result.skipped.append(url)
                 continue
             }
@@ -103,14 +114,16 @@ actor SafeDeleteService {
     }
 
     /// Remove contents of a directory (not the directory itself).
-    func removeContents(of directory: URL, dryRun: Bool = false) async -> DeletionResult {
+    func removeContents(of directory: URL,
+                        dryRun: Bool = false,
+                        policy: ProtectedPaths.DeletionPolicy = .aiSafe) async -> DeletionResult {
         let fm = FileManager.default
         guard let contents = try? fm.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil,
             options: .skipsHiddenFiles
         ) else { return DeletionResult() }
-        return await remove(items: contents, dryRun: dryRun)
+        return await remove(items: contents, dryRun: dryRun, policy: policy)
     }
 
     func sizeOfItems(_ urls: [URL]) -> UInt64 {

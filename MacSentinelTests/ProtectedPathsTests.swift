@@ -47,6 +47,50 @@ final class ProtectedPathsTests: XCTestCase {
         XCTAssertTrue(ProtectedPaths.isProtected(home.appendingPathComponent("Library/Group Containers")))
     }
 
+    // MARK: - DeletionPolicy — large/duplicate file delete bug regression
+
+    func testUserContentRootsTreeProtectedUnderAISafe() {
+        // .aiSafe is the default behaviour — MCP / batch callers can't
+        // touch anything inside Downloads/Documents/Desktop/Movies/Pictures.
+        let fake = home.appendingPathComponent("Downloads/old-installer.dmg")
+        XCTAssertTrue(ProtectedPaths.isProtected(fake))
+        XCTAssertTrue(ProtectedPaths.isProtected(fake, policy: .aiSafe))
+        XCTAssertTrue(ProtectedPaths.isProtected(home.appendingPathComponent("Pictures/Screenshot.png"), policy: .aiSafe))
+        XCTAssertTrue(ProtectedPaths.isProtected(home.appendingPathComponent("Documents/old.zip"), policy: .aiSafe))
+    }
+
+    func testUserContentRootsCleanableUnderUserExplicit() {
+        // .userExplicit — the user picked the file in the GUI. Allow it.
+        // (This is what fixes the "delete then file reappears" bug in
+        // LargeFileView / DuplicateFileView.)
+        XCTAssertFalse(ProtectedPaths.isProtected(home.appendingPathComponent("Downloads/old-installer.dmg"), policy: .userExplicit))
+        XCTAssertFalse(ProtectedPaths.isProtected(home.appendingPathComponent("Pictures/old-screenshot.png"), policy: .userExplicit))
+        XCTAssertFalse(ProtectedPaths.isProtected(home.appendingPathComponent("Desktop/scratch.zip"), policy: .userExplicit))
+        XCTAssertFalse(ProtectedPaths.isProtected(home.appendingPathComponent("Movies/old.mov"), policy: .userExplicit))
+    }
+
+    func testUserContentRootsThemselvesStillProtectedEvenWithUserExplicit() {
+        // Even with .userExplicit we never delete the root itself —
+        // that would nuke the whole folder.
+        XCTAssertTrue(ProtectedPaths.isProtected(home.appendingPathComponent("Downloads"), policy: .userExplicit))
+        XCTAssertTrue(ProtectedPaths.isProtected(home.appendingPathComponent("Pictures"), policy: .userExplicit))
+    }
+
+    func testPhotosLibraryAlwaysProtectedEvenWithUserExplicit() {
+        // The Photos Library SQLite database lives INSIDE ~/Pictures but
+        // is its own protected entry — the user could click "delete" by
+        // mistake and lose every photo.
+        let inside = home.appendingPathComponent("Pictures/Photos Library.photoslibrary/database/Photos.sqlite")
+        XCTAssertTrue(ProtectedPaths.isProtected(inside, policy: .userExplicit))
+        XCTAssertTrue(ProtectedPaths.isProtected(inside, policy: .aiSafe))
+    }
+
+    func testKeychainAlwaysProtectedEvenWithUserExplicit() {
+        let kc = home.appendingPathComponent("Library/Keychains/login.keychain-db")
+        XCTAssertTrue(ProtectedPaths.isProtected(kc, policy: .userExplicit))
+        XCTAssertTrue(ProtectedPaths.isProtected(kc, policy: .aiSafe))
+    }
+
     func testInsideLibraryCachesStillCleanable() {
         // The whole point of MacSentinel — we MUST still be able to clean
         // individual vendors and per-profile cache subdirs.

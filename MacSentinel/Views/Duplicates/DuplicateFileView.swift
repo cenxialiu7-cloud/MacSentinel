@@ -17,6 +17,10 @@ final class DuplicateFileViewModel {
     var isDeleting = false
     var statusMessage = "點「掃描」開始尋找重複檔案"
     var minSizeMB: Double = 1   // skip files smaller than this
+    /// Items the delete couldn't reach; surfaced to the user instead of
+    /// silently disappearing from the list.
+    var lastSkipped: [URL] = []
+    var lastFailures: [SafeDeleteService.DeletionFailure] = []
 
     var totalReclaimable: UInt64 {
         groups.reduce(0) { $0 + $1.reclaimableBytes }
@@ -88,16 +92,31 @@ final class DuplicateFileViewModel {
         guard !urls.isEmpty else { return }
         isDeleting = true
         statusMessage = "送往垃圾桶 \(urls.count) 個檔案…"
-        let result = await SafeDeleteService.shared.remove(items: urls)
-        // Rebuild groups, removing deleted files and dropping any group that
-        // has only 1 file left after cleanup.
-        let deletedPaths = Set(urls.map(\.path))
+
+        // .userExplicit — user can see every file row + checkbox.
+        let result = await SafeDeleteService.shared.remove(
+            items: urls,
+            policy: .userExplicit
+        )
+        lastSkipped  = result.skipped
+        lastFailures = result.failures
+
+        // Honest UI: only drop items that actually got trashed. A group with
+        // <2 files left is no longer a duplicate group.
+        let deletedPaths = Set(result.deleted.map { $0.0.path })
         groups = groups.compactMap { g in
             var copy = g
             copy.files.removeAll { deletedPaths.contains($0.path) }
             return copy.files.count >= 2 ? copy : nil
         }
-        statusMessage = "已送往垃圾桶 \(ByteFormatter.format(result.totalDeletedBytes))"
+
+        let deletedCount = result.deleted.count
+        let stuckCount   = result.skipped.count + result.failures.count
+        if stuckCount == 0 {
+            statusMessage = "已送往垃圾桶 \(deletedCount) 個檔案，\(ByteFormatter.format(result.totalDeletedBytes))"
+        } else {
+            statusMessage = "已送 \(deletedCount) 個（\(ByteFormatter.format(result.totalDeletedBytes))）；\(stuckCount) 個仍受保護"
+        }
         isDeleting = false
     }
 }
@@ -149,6 +168,13 @@ struct DuplicateFileView: View {
             .background(Color(NSColor.windowBackgroundColor))
 
             Divider()
+
+            if !vm.lastSkipped.isEmpty || !vm.lastFailures.isEmpty {
+                StuckItemsBanner(
+                    skipped: vm.lastSkipped,
+                    failures: vm.lastFailures
+                )
+            }
 
             if vm.groups.isEmpty && !vm.isScanning {
                 ContentUnavailableView(

@@ -20,6 +20,37 @@ enum ProtectedPaths {
 
     static let home = FileManager.default.homeDirectoryForCurrentUser.path
 
+    /// Why the caller wants to delete something.
+    ///
+    /// `.aiSafe` (default) — an AI assistant, MCP client, or batch operation
+    ///   triggered this. Block deletion inside user content roots
+    ///   (~/Documents, ~/Desktop, ~/Downloads, ~/Pictures, ~/Movies, ~/Music,
+    ///   ~/Public) so a hallucinated path can't nuke the user's files.
+    ///
+    /// `.userExplicit` — a human clicked an item in the GUI (LargeFileView,
+    ///   DuplicateFileView, etc.) where they can SEE each path before
+    ///   pressing the trash button. Allow deletions inside user content
+    ///   roots, but still hard-block keychain / mail / Safari / iCloud /
+    ///   Photos library / system paths / explicit protectedFiles.
+    enum DeletionPolicy {
+        case aiSafe
+        case userExplicit
+    }
+
+    /// User content roots — the bag-of-files folders that human users
+    /// routinely fill with downloads, screenshots, exports, archives.
+    /// Always exact-match-protected (you can't delete the root itself);
+    /// tree-protected only under `.aiSafe`.
+    static let userContentRoots: Set<String> = [
+        "\(home)/Documents",
+        "\(home)/Desktop",
+        "\(home)/Downloads",
+        "\(home)/Pictures",
+        "\(home)/Music",
+        "\(home)/Movies",
+        "\(home)/Public",
+    ]
+
     /// Paths that are unconditionally protected regardless of safety level.
     /// These are checked with prefix matching: if the target path is INSIDE
     /// one of these (or equals one), deletion is blocked.
@@ -109,19 +140,25 @@ enum ProtectedPaths {
     ///   2. Exact match against `protectedFiles` set       → protected
     ///   3. Path is INSIDE a protected directory           → protected
     ///   4. Otherwise                                       → allowed
-    static func isProtected(_ url: URL) -> Bool {
+    ///
+    /// Under `policy = .userExplicit`, step 3 is relaxed for the user
+    /// content roots (Documents/Desktop/Downloads/Pictures/Music/Movies/
+    /// Public) — the user can see exactly what's queued, so we trust them.
+    /// All other tree-protected paths (Keychain, Mail, Safari, iCloud,
+    /// Photos library, system roots) remain blocked.
+    static func isProtected(_ url: URL,
+                            policy: DeletionPolicy = .aiSafe) -> Bool {
         let path = url.standardizedFileURL.path
 
-        // Step 1 & 2: exact-match files / directories
+        // Step 1 & 2: exact-match files / directories.
+        // Exact match ALWAYS wins — even with policy = .userExplicit you can't
+        // delete the root of ~/Downloads or ~/Pictures (that would nuke
+        // hundreds of files in one click).
         if protected.contains(path) { return true }
         if protectedFiles.contains(path) { return true }
 
         // Step 3: inside a protected directory.
-        // Important nuance: `home` (~) itself is exact-match only — we DO want
-        // to allow MacSentinel to clean ~/Library/Caches, ~/.npm/_cacache, etc.
-        // But user content roots (Documents, Desktop, Downloads, Pictures…)
-        // and sensitive Library subdirs (Keychains, Mail, Safari…) remain
-        // tree-protected.
+        // These roots are EXACT-MATCH only (their tree is fair game).
         let exactMatchOnly: Set<String> = [
             home,   // ← only the home dir itself, not its subtree
             // Cleanup roots — protect the *root*, allow cleaning INSIDE.
@@ -134,6 +171,10 @@ enum ProtectedPaths {
 
         for protectedPath in protected {
             if exactMatchOnly.contains(protectedPath) { continue }
+            // Under .userExplicit, user content roots are exact-only too.
+            if policy == .userExplicit, userContentRoots.contains(protectedPath) {
+                continue
+            }
             if path.hasPrefix(protectedPath + "/") {
                 return true
             }
@@ -142,11 +183,12 @@ enum ProtectedPaths {
     }
 
     /// Validate that all URLs in a deletion batch are safe to delete.
-    static func validate(_ urls: [URL]) -> (safe: [URL], blocked: [URL]) {
+    static func validate(_ urls: [URL],
+                         policy: DeletionPolicy = .aiSafe) -> (safe: [URL], blocked: [URL]) {
         var safe: [URL] = []
         var blocked: [URL] = []
         for url in urls {
-            if isProtected(url) {
+            if isProtected(url, policy: policy) {
                 blocked.append(url)
             } else {
                 safe.append(url)
