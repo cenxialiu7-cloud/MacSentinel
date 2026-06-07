@@ -20,9 +20,6 @@ struct DashboardView: View {
                     AlertBannerView(alerts: collector.systemAlerts)
                 }
 
-                // ── Sponsor Banner (auto-hides if disabled / no live offer) ─
-                SponsorBanner()
-
                 // ── Metric Cards Grid ─────────────────────────────────────────
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                     if let snap = collector.latestSnapshot {

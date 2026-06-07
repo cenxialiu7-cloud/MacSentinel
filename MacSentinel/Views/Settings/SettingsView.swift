@@ -6,8 +6,6 @@ struct SettingsView: View {
     @AppStorage("tempWarningThreshold")   private var tempWarning: Double   = 85
     @AppStorage("sampleInterval")         private var sampleInterval: Double = 2
     @AppStorage("launchAtLogin")          private var launchAtLogin: Bool   = false
-    @AppStorage(MonetizationConfig.showSponsorMessagesKey)
-    private var showSponsorMessages: Bool = true
 
     // MCP server state, persisted to disk via MCPConfig
     @State private var mcpConfig: MCPConfig = MCPConfig.load()
@@ -193,33 +191,28 @@ struct SettingsView: View {
                     .font(.caption2)
             }
 
-            // ── 支援與贊助 ─────────────────────────────────────────────
+            // ── 支援開發 ─────────────────────────────────────────────
             Section {
-                Toggle("顯示贊助商訊息", isOn: $showSponsorMessages)
-                    .help("關閉後，Dashboard 頂部的 VPN / 合作夥伴橫幅將不再顯示。")
-
-                if let offer = MonetizationConfig.primaryVPNOffer, let url = offer.url {
-                    LabeledContent(offer.headline) {
-                        Link(offer.ctaTitle, destination: url)
-                            .font(.callout)
-                    }
-                }
-
-                if let kofi = MonetizationConfig.donationURL {
+                if let kofi = URL(string: "https://ko-fi.com/yoyoisgood") {
                     LabeledContent("贊助開發") {
                         Link("☕ Ko-fi", destination: kofi)
                             .font(.callout)
                     }
                 }
+                LabeledContent("回報問題 / 建議") {
+                    Link("GitHub Issues",
+                         destination: URL(string: "https://github.com/cenxialiu7-cloud/MacSentinel/issues")!)
+                        .font(.callout)
+                }
             } header: {
-                Text("支援與贊助")
+                Text("支援開發")
             } footer: {
-                Text("MacSentinel 完全免費且開放原始碼。若覺得有用，可以透過上述連結支持持續開發；所有外連點擊都會透過你的預設瀏覽器開啟，App 本身不載入任何第三方追蹤腳本。")
+                Text("MacSentinel 完全免費且開放原始碼，App 內不放任何廣告與追蹤腳本。若覺得有用，可以透過 Ko-fi 支持持續開發。")
                     .font(.caption2)
             }
 
             Section("關於") {
-                LabeledContent("版本", value: "MacSentinel 1.1.7")
+                LabeledContent("版本", value: "MacSentinel 1.1.8")
                 LabeledContent("最低系統", value: "macOS 14.0 Sonoma")
                 LabeledContent("架構", value: "Swift 5.10 · SwiftUI · IOKit · MCP")
                 Button("開源致謝與授權") { showAttribution = true }
